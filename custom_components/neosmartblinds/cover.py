@@ -400,9 +400,10 @@ class NeoSmartBlindsCover(CoverEntity, RestoreEntity):
         self._current_position = target_position
         self._current_action = ACTION_CLOSING
 
+        LOGGER.info('{} start closing to {}'.format(self._name, target_position))
         # Issue the move command
         if await self._client.async_down_command() if move_command is None else await move_command():
-            LOGGER.info('{} closing to {}'.format(self._name, target_position))
+            LOGGER.info('{} commanded closing to {}'.format(self._name, target_position))
             # Put the positioning request on the ha queue to run in parallel but don't await it here (we want to continue)
             self.hass.async_create_task(self.async_cover_closed_to_position())
             # Finally, update the state to reflect that the command is in flight
@@ -436,11 +437,12 @@ class NeoSmartBlindsCover(CoverEntity, RestoreEntity):
         self._current_position = target_position
         self._current_action = ACTION_OPENING
 
+        LOGGER.info('{} start opening to {}'.format(self._name, target_position))
         # Issue the move command
         if await self._client.async_up_command() if move_command is None else await move_command():
-            LOGGER.info('{} opening to {}'.format(self._name, target_position))
             # Put the positioning request on the ha queue to run in parallel but don't await it here (we want to continue)
             self.hass.async_create_task(self.async_cover_opened_to_position())
+            LOGGER.info('{} commanded opening to {}'.format(self._name, target_position))
             # Finally, update the state to reflect that the command is in flight
             self.async_write_ha_state()
         else:
