@@ -34,6 +34,8 @@ class NeoParentBlind(object):
         self._time_of_first_intent = None
         self._intended_command = None
         self._wait = asyncio.Event()
+        self._wait_done = asyncio.Event()
+        self._lock_command_runner = False
 
     def add_child(self):
         self._child_count += 1
@@ -67,10 +69,15 @@ class NeoParentBlind(object):
             self._time_of_first_intent = None
             self._intended_command = None
             self._wait.clear()
+            self._wait_done.clear()
+            self._lock_command_runner = False
 
     CHANGE_DEVICE = 0
     IGNORE = 1
     USE_DEVICE = 2
+
+    def done(self):
+        self._wait_done.set()
 
     def fulfilled(self):
         return self._fulfilled
@@ -79,10 +86,14 @@ class NeoParentBlind(object):
         if not self._fulfilled:
             return NeoParentBlind.USE_DEVICE
         
-        if self._intent == self._child_count:
+        if self._intent == self._child_count and not self._lock_command_runner:
+            self._lock_command_runner = True
             return NeoParentBlind.CHANGE_DEVICE
 
         return NeoParentBlind.IGNORE
+
+    async def async_wait_done(self):
+        await asyncio.create_task(self._wait_done.wait())
 
     async def async_backoff(self):
         now = time.time()
@@ -158,28 +169,38 @@ class NeoCommandSender(object):
     async def async_send_command(self, command, parent_device = None):
         global parents
         action = NeoParentBlind.USE_DEVICE
+        intent_registered = False
 
         if parent_device is not None:
             # find parent, register intent
             if parent_device in parents:
-                _LOGGER.debug("{}, checking for aggregation {}".format(self._device, parent_device))
+                _LOGGER.debug("{}, checking for aggregation {}, command {}".format(self._device, parent_device, command))
                 parent = parents[parent_device]
-                if parent.register_intent(command):
+                intent_registered = parent.register_intent(command)
+                if intent_registered:
                     await parent.async_backoff()
                     action = parent.act_on_intent()
-                    parent.unregister_intent()
 
         # if parent fulfilled, use it else continue
         if action == NeoParentBlind.USE_DEVICE:
-            _LOGGER.debug("{}, issuing command".format(self._device))
+            _LOGGER.debug("{}, issuing command, {}".format(self._device, command))
             await async_backoff()
+            if intent_registered:
+                parent.unregister_intent()
             return await self.async_send_command_to_device(command, self._device)
         elif action == NeoParentBlind.CHANGE_DEVICE:
-            _LOGGER.debug("{}, issuing to group command instead {}".format(self._device, parent_device))
+            _LOGGER.debug("{}, issuing to group command ({}) instead {}".format(self._device, command, parent_device))
             await async_backoff()
-            return await self.async_send_command_to_device(command, parent_device)
+            result = await self.async_send_command_to_device(command, parent_device)
+            if intent_registered:
+                parent.done()
+                parent.unregister_intent()
+            return result
         else:
-            _LOGGER.debug("{}, aggregated to group command".format(self._device))
+            _LOGGER.debug("{}, aggregated to group command, {}".format(self._device, command))
+            if intent_registered:
+                await parent.async_wait_done()
+                parent.unregister_intent()
             return True
 
     async def async_send_command_to_device(self, command, device):
@@ -318,12 +339,12 @@ class NeoSmartBlind:
         return False
 
     async def async_set_fav_position(self, pos):
-        if pos <= 50:
+        if pos <= 25:
             if await self._command_sender.async_send_command(CMD_FAV):
-                return 50
-        if pos >= 51:
+                return 25
+        if pos >= 75:
             if await self._command_sender.async_send_command(CMD_FAV_2):
-                return 51
+                return 75
         return False
 
 

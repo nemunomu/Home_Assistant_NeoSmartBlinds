@@ -1,5 +1,7 @@
 # Custom Component for NeoSmartBlinds Integration on Home Assistant
 
+WIP fork of https://github.com/mtgeekman/Home_Assistant_NeoSmartBlinds
+
 The NeoSmartBlinds platform allows you to control a NeoSmartBlind / group of NeoSmartBlinds via a NeoSmartBlinds controller.
 
 There is currently support for the following device types within Home Assistant:
@@ -100,6 +102,9 @@ Determines how requests to position by percentage are handled. As the blinds do 
 0 = No support (Default)<br>
 1 = Percentage positioning supported directly by blind, integration only reports position based on estimate<br>
 2 = Percentage positioning emulated completely by this integration.
+
+**positions** _(int array)_<br>
+If present, list of favourites configured in the blind itself. Use micro-up/down to move from the current position to these positions instead of timing.
 
 Notes:
 - If the blind is controlled outside of HA (e.g. in native app, using remote), this integration has no mechanism to discover the position from the hub so HA will get out of sync with the blind.

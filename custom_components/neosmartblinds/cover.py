@@ -33,6 +33,7 @@ from .const import (
     CONF_MOTOR_CODE,
     CONF_START_POSITION,
     CONF_PARENT,
+    CONF_POSITIONS,
     DATA_NEOSMARTBLINDS,
     LEGACY_POSITIONING,
     EXPLICIT_POSITIONING,
@@ -75,6 +76,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_MOTOR_CODE, description="ID Code of motor in app", default=''): cv.string,
         vol.Optional(CONF_START_POSITION, description="If percent positioning mode is enabled, this value will be used as the starting position else it will be restored from the last run"): cv.positive_int,
         vol.Optional(CONF_PARENT, description="Parent group code in app"): cv.string,
+        vol.Optional(CONF_POSITIONS, default=[],
+                     description="Positions reached with a single micro command instead of a timed move"):
+            vol.All(cv.ensure_list, [cv.positive_int]),
     }
 )
 
@@ -94,7 +98,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         config.get(CONF_PERCENT_SUPPORT),
         config.get(CONF_MOTOR_CODE),
         config.get(CONF_START_POSITION),
-        config.get(CONF_PARENT)
+        config.get(CONF_PARENT),
+        config.get(CONF_POSITIONS)
         )
     async_add_entities([cover])
 
@@ -266,11 +271,13 @@ class PositioningRequest(object):
 class NeoSmartBlindsCover(CoverEntity, RestoreEntity):
     """Representation of a NeoSmartBlinds cover."""
 
-    def __init__(self, home_assistant, name, host, the_id, device, close_time, protocol, port, rail, percent_support, 
-                 motor_code, starting_position, parent_code):
+    def __init__(self, home_assistant, name, host, the_id, device, close_time, protocol, port, rail, percent_support,
+                 motor_code, starting_position, parent_code, positions=None):
         """Initialize the cover."""
         self.home_assistant = home_assistant
         self._name = name
+        # Positions reached with a single micro command instead of a timed move.
+        self._positions = positions or []
         # This isn't ideal but there is no feedback from the blind / hub about position.
         self._percent_support = percent_support
         if self._percent_support > 0:
@@ -400,9 +407,10 @@ class NeoSmartBlindsCover(CoverEntity, RestoreEntity):
         self._current_position = target_position
         self._current_action = ACTION_CLOSING
 
+        LOGGER.info('{} start closing to {}'.format(self._name, target_position))
         # Issue the move command
         if await self._client.async_down_command() if move_command is None else await move_command():
-            LOGGER.info('{} closing to {}'.format(self._name, target_position))
+            LOGGER.info('{} commanded closing to {}'.format(self._name, target_position))
             # Put the positioning request on the ha queue to run in parallel but don't await it here (we want to continue)
             self.hass.async_create_task(self.async_cover_closed_to_position())
             # Finally, update the state to reflect that the command is in flight
@@ -436,11 +444,12 @@ class NeoSmartBlindsCover(CoverEntity, RestoreEntity):
         self._current_position = target_position
         self._current_action = ACTION_OPENING
 
+        LOGGER.info('{} start opening to {}'.format(self._name, target_position))
         # Issue the move command
         if await self._client.async_up_command() if move_command is None else await move_command():
-            LOGGER.info('{} opening to {}'.format(self._name, target_position))
             # Put the positioning request on the ha queue to run in parallel but don't await it here (we want to continue)
             self.hass.async_create_task(self.async_cover_opened_to_position())
+            LOGGER.info('{} commanded opening to {}'.format(self._name, target_position))
             # Finally, update the state to reflect that the command is in flight
             self.async_write_ha_state()
         else:
@@ -558,6 +567,19 @@ class NeoSmartBlindsCover(CoverEntity, RestoreEntity):
             if pos < 2:
                 """Assume anything greater less than 2 is just a close command"""
                 pos = 0
+
+            if pos in self._positions:
+                if self._current_position != pos:
+                    if self._pending_positioning_command is not None:
+                        await self.async_stop_cover_partially()
+                    if self._current_position < pos:
+                        await self._client.async_open_cover_tilt()   # micro-up (mu)
+                    else:
+                        await self._client.async_close_cover_tilt()  # micro-down (md)
+                    self._current_position = pos
+                    self._current_action = ACTION_STOPPED
+                    self.async_write_ha_state()
+                return
 
             """Check for any change in position, only act if it has changed"""
             delta = 0
