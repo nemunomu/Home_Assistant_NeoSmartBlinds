@@ -308,17 +308,17 @@ class NeoSmartBlind:
 
     async def async_open_cover_tilt(self, **kwargs):
         if self._rail == 1:
-            return await self._command_sender.async_send_command(CMD_MICRO_UP)
+            return await self._command_sender.async_send_command(CMD_MICRO_UP, self._parent_code)
         elif self._rail == 2:
-            return await self._command_sender.async_send_command(CMD_MICRO_UP2)
+            return await self._command_sender.async_send_command(CMD_MICRO_UP2, self._parent_code)
         """Open the cover tilt."""
         return False
-        
+
     async def async_close_cover_tilt(self, **kwargs):
         if self._rail == 1:
-            return await self._command_sender.async_send_command(CMD_MICRO_DOWN)
+            return await self._command_sender.async_send_command(CMD_MICRO_DOWN, self._parent_code)
         elif self._rail == 2:
-            return await self._command_sender.async_send_command(CMD_MICRO_DOWN2)
+            return await self._command_sender.async_send_command(CMD_MICRO_DOWN2, self._parent_code)
         """Close the cover tilt."""
         return False
 
